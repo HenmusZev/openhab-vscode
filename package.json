@@ -249,6 +249,27 @@
                     "default": "/opt/openhab/userdata/logs/openhab.log",
                     "markdownDescription": "Absolute path to the openHAB `openhab.log` file.\n\nUsed by the **Log Hover** feature to search for rule/automation log output."
                 },
+                "openhab.hover.languages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "openhab",
+                        "javascript"
+                    ],
+                    "markdownDescription": "Language identifiers the item hover applies to. The `openhab` language covers `.items`, `.rules`, `.script`, `.sitemap`, `.things` and `.persist` files. Remove an entry to switch the hover off for that language."
+                },
+                "openhab.hover.filePatterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "**/*.sitemap"
+                    ],
+                    "markdownDescription": "Glob patterns the item hover applies to, for file types that contain openHAB item names without having a language identifier of their own. Add `**/*.yaml` to get hovers in ESPHome configurations, for instance."
+                },
                 "openhab.hover.showItemDefinition": {
                     "type": "boolean",
                     "default": true,
