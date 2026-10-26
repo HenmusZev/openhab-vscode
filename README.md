@@ -24,6 +24,19 @@ Everything else (syntax highlighting, snippets, tree views, REST API integration
 
 > **Note:** PR [#384](https://github.com/openhab/openhab-vscode/pull/384) is still open upstream. Both it and the `item=` bracket fix above are already included directly in this branch (and in the bundled `openhab-1.0.2.vsix`), so you don't need to wait for anything to be merged to get them here.
 
+## This build (`1.0.3`) vs. `release/1.0.2`
+
+Built on top of `release/1.0.2`, so everything in the table above is included as well. Nothing here changes existing behaviour by default: the new settings ship with values that reproduce what the previous build did.
+
+| Change                                             | Source issue                                                 | What it does                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Creating Items from a Thing's channels works again | [#386](https://github.com/openhab/openhab-vscode/issues/386) | `Add all items` on a Thing in the Things Explorer failed with `TypeError: AsciiTable is not a constructor`. `ItemsProvider` imported the CommonJS `ascii-table` module with `import * as`, which TypeScript compiles to `__importStar(...)` under `module: Node16` - a namespace object that cannot be constructed. Reproduces on `main`, where `client/tsconfig.json` switched from `module: commonjs` to `module: Node16`. |
+| Configurable hover file types                      | none yet                                                     | The file types the item hover applies to come from `openhab.hover.languages` and `openhab.hover.filePatterns` instead of a hard-coded list, so hovers can be switched on for file types that carry item names without being openHAB files - ESPHome `.yaml` configurations, for instance. See [Hover File Type Configuration](#hover-file-type-configuration).                                                               |
+| Type declarations for `ascii-table`                | none yet                                                     | The package ships none and there is no `@types/ascii-table`, so it resolved to an implicit `any`. Declared with `export =`, which is also what makes `import AsciiTable = require(...)` the correct form.                                                                                                                                                                                                                    |
+| `HoverProvider` tests repaired                     | none yet                                                     | All three tests called `getRestItemHover()`, which no longer exists - it became `getRestItemMarkdown()`, returning a `MarkdownString` rather than a `Hover` and resolving to `null` instead of rejecting. Because `npm run package` runs the test suite as part of `npm run build`, these failures aborted every packaging run.                                                                                              |
+
+> **Note:** only the first change has been raised upstream so far. The three marked `none yet` live only in this branch; the `ascii-table` fix applies to `main` unchanged, the other two build on `release/1.0.2`.
+
 ## Features
 
 - Syntax highlighting for the [openHAB DSL](https://www.openhab.org/docs/configuration/) (rules, items, scripts and sitemaps).
@@ -41,6 +54,7 @@ Everything else (syntax highlighting, snippets, tree views, REST API integration
 - Get live Item states while hovering over item names in the Editor
 - Extract item states from `events.log` / `openhab.log`: hovering a variable like `geschlossenPrev` shows its value when found in the log with the format `geschlossenPrev="true"`
 - Hover tooltips for item names in JavaScript automation files (`.js`) and sitemap files (`.sitemap`), including `item=<name>` references
+- Choose which file types get item hovers, including file types that are not openHAB files
 - Hover over an item to see where it's defined and where it's used in Things, Rules, Sitemaps and Scripts, with jump-to links
 - Show human readable `Thread::sleep()` times while hovering
 
@@ -67,6 +81,21 @@ Controls what's shown when hovering an Item name (definition location, and where
 | `openhab.hover.showLogSearch`            | `true`  | Fall back to searching `events.log` / `openhab.log` for a hovered expression's latest state when it isn't a known REST item. |
 | `openhab.hover.maxReferencesPerCategory` | `10`    | Maximum number of file locations shown per reference category (definitions, rules, sitemaps, scripts).                       |
 
+### Hover File Type Configuration
+
+Which documents the item hover applies to. Changing either setting takes effect at once; no window reload is needed.
+
+| Setting                      | Default                     | Description                                                                                                                                                                              |
+| ---------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openhab.hover.languages`    | `["openhab", "javascript"]` | Language identifiers to hover in. The `openhab` language covers `.items`, `.rules`, `.script`, `.sitemap`, `.things` and `.persist`. Remove an entry to switch hovers off for it.        |
+| `openhab.hover.filePatterns` | `["**/*.sitemap"]`          | Glob patterns to hover in, for file types that hold item names without having a language identifier of their own. Add `**/*.yaml` to get hovers in ESPHome configurations, for instance. |
+
+Both settings are lists, so an entry has to be added rather than replaced:
+
+```jsonc
+"openhab.hover.filePatterns": ["**/*.sitemap", "**/*.yaml"]
+```
+
 ![openHAB2 code snippets](docs/images/openhab-demo.gif)
 
 ## Configuration
@@ -75,13 +104,24 @@ Learn more about the configuration options in our [documentation](https://github
 
 ## Installing this build
 
-This branch isn't published to the Marketplace or Open VSX. A pre-built package, `openhab-1.0.2.vsix`, is committed at the root of this branch. To install it:
+This branch isn't published to the Marketplace or Open VSX, so it is installed from a package file.
+
+`openhab-1.0.2.vsix`, committed at the root of `release/1.0.2`, is the build without the 1.0.3 changes above. To get those, build the package from this branch:
 
 ```sh
-code --install-extension openhab-1.0.2.vsix
+npm install
+npm run package
 ```
 
-Or in VS Code: open the Extensions view → `...` menu → **Install from VSIX...** → select `openhab-1.0.2.vsix`.
+That writes `openhab-1.0.3.vsix` to the root. `npm run package` cleans `client/out` first, which fails while VS Code holds those files, so close VS Code before building. Then install it:
+
+```sh
+code --install-extension openhab-1.0.3.vsix --force
+```
+
+Or in VS Code: open the Extensions view → `...` menu → **Install from VSIX...** → select the `.vsix` file. Restart VS Code afterwards; reloading the window is not always enough for an extension that was already running.
+
+Both packages carry the extension id `openhab.openhab`, the same as the published one, so installing either replaces whatever is there. The Extensions view may keep showing the Marketplace version number; `code --list-extensions --show-versions` reports what is actually installed.
 
 ## Things Explorer demo
 
