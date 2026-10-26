@@ -32,6 +32,28 @@ let _extensionPath: string
 let ohStatusBarItem: vscode.StatusBarItem
 
 /**
+ * Builds the set of documents the item hover applies to, from user configuration.
+ *
+ * `openhab.hover.languages` holds VS Code language identifiers; the `openhab` language
+ * already covers `.items`, `.rules`, `.script`, `.sitemap`, `.things` and `.persist`.
+ * `openhab.hover.filePatterns` holds glob patterns, for file types that carry openHAB item
+ * names without having a language identifier of their own - ESPHome `.yaml` configurations,
+ * for instance.
+ *
+ * @returns The document filters to register the hover provider for
+ */
+function hoverDocumentSelector(): vscode.DocumentFilter[] {
+    const config = vscode.workspace.getConfiguration('openhab.hover')
+    const languages = config.get<string[]>('languages') || []
+    const patterns = config.get<string[]>('filePatterns') || []
+
+    return [
+        ...languages.map((language) => ({ language, scheme: 'file' })),
+        ...patterns.map((pattern) => ({ pattern, scheme: 'file' })),
+    ]
+}
+
+/**
  * Initializes the openHAB extension
  * and registers all commands, views and providers depending on the user configuration.
  *
@@ -257,68 +279,74 @@ async function init(disposables: vscode.Disposable[], context: vscode.ExtensionC
             )
         )
 
-        disposables.push(
-            vscode.languages.registerHoverProvider(
-                [
-                    { language: 'openhab', scheme: 'file' },
-                    { language: 'javascript', scheme: 'file' },
-                    { pattern: '**/*.sitemap', scheme: 'file' },
-                ],
-                {
-                    provideHover(document, position, token) {
-                        const docLine = document.lineAt(position.line)
-                        const hoveredLine = docLine.text.slice(docLine.firstNonWhitespaceCharacterIndex)
+        const hoverHandler: vscode.HoverProvider = {
+            provideHover(document, position, token) {
+                const docLine = document.lineAt(position.line)
+                const hoveredLine = docLine.text.slice(docLine.firstNonWhitespaceCharacterIndex)
 
-                        // Try to match a key="value" / key=value pair first (e.g. item=FF_Bath_Light in
-                        // sitemap files). The unquoted value alternative is restricted to identifier
-                        // characters (`\w+`) instead of `\S+`, otherwise it would greedily swallow a
-                        // directly-following character like `{` (e.g. `item=gEHZStatistik{`).
-                        // HoverProvider.getHover() extracts the actual value from this key=value text
-                        // itself, so it is passed straight through without running it through the
-                        // single-word sanity check below (which would otherwise always reject it, since
-                        // "key" and "value" are two separate `\w+` matches).
-                        const kvRange = document.getWordRangeAtPosition(position, /\w+=(?:"[^"]*"|'[^']*'|\w+)/)
+                // Try to match a key="value" / key=value pair first (e.g. item=FF_Bath_Light in
+                // sitemap files). The unquoted value alternative is restricted to identifier
+                // characters (`\w+`) instead of `\S+`, otherwise it would greedily swallow a
+                // directly-following character like `{` (e.g. `item=gEHZStatistik{`).
+                // HoverProvider.getHover() extracts the actual value from this key=value text
+                // itself, so it is passed straight through without running it through the
+                // single-word sanity check below (which would otherwise always reject it, since
+                // "key" and "value" are two separate `\w+` matches).
+                const kvRange = document.getWordRangeAtPosition(position, /\w+=(?:"[^"]*"|'[^']*'|\w+)/)
 
-                        if (kvRange) {
-                            return ohHoverProvider.getHover(
-                                document.getText(kvRange),
-                                hoveredLine,
-                                document.uri.toString(),
-                                position.line
-                            )
-                        }
-
-                        // Fall back to matching a plain identifier. Restricting word detection to
-                        // identifier characters ensures that hovering right next to a following
-                        // character like `{`, `[` or `(` (with no whitespace in between) still resolves
-                        // to just the item name instead of an undefined range (which would otherwise
-                        // make VS Code fall back to the entire document's text).
-                        const hoveredRange = document.getWordRangeAtPosition(position, /[A-Za-z0-9_]+/)
-
-                        if (!hoveredRange) {
-                            return null
-                        }
-
-                        const hoveredText = document.getText(hoveredRange)
-
-                        // let matchresult = hoveredText.match(/(\w+){1}/gm)
-                        const matchresult = hoveredText.match(HoverProvider.HOVERED_WORD_REGEX)
-
-                        if (!matchresult || matchresult.length > 1) {
-                            console.log(`That's no single word. Waiting for the next hover.`)
-                            return null
-                        }
-
-                        // Will return null or the hover content
-                        return ohHoverProvider.getHover(
-                            hoveredText,
-                            hoveredLine,
-                            document.uri.toString(),
-                            position.line
-                        )
-                    },
+                if (kvRange) {
+                    return ohHoverProvider.getHover(
+                        document.getText(kvRange),
+                        hoveredLine,
+                        document.uri.toString(),
+                        position.line
+                    )
                 }
-            )
+
+                // Fall back to matching a plain identifier. Restricting word detection to
+                // identifier characters ensures that hovering right next to a following
+                // character like `{`, `[` or `(` (with no whitespace in between) still resolves
+                // to just the item name instead of an undefined range (which would otherwise
+                // make VS Code fall back to the entire document's text).
+                const hoveredRange = document.getWordRangeAtPosition(position, /[A-Za-z0-9_]+/)
+
+                if (!hoveredRange) {
+                    return null
+                }
+
+                const hoveredText = document.getText(hoveredRange)
+
+                // let matchresult = hoveredText.match(/(\w+){1}/gm)
+                const matchresult = hoveredText.match(HoverProvider.HOVERED_WORD_REGEX)
+
+                if (!matchresult || matchresult.length > 1) {
+                    console.log(`That's no single word. Waiting for the next hover.`)
+                    return null
+                }
+
+                // Will return null or the hover content
+                return ohHoverProvider.getHover(hoveredText, hoveredLine, document.uri.toString(), position.line)
+            },
+        }
+
+        // The hover applies to whatever file types are configured, so the registration has to be
+        // replaceable: a changed setting disposes the old one and registers a fresh one.
+        let hoverRegistration = vscode.languages.registerHoverProvider(hoverDocumentSelector(), hoverHandler)
+        disposables.push({ dispose: () => hoverRegistration.dispose() })
+
+        disposables.push(
+            vscode.workspace.onDidChangeConfiguration((event) => {
+                const affected =
+                    event.affectsConfiguration('openhab.hover.languages') ||
+                    event.affectsConfiguration('openhab.hover.filePatterns')
+
+                if (!affected) {
+                    return
+                }
+
+                hoverRegistration.dispose()
+                hoverRegistration = vscode.languages.registerHoverProvider(hoverDocumentSelector(), hoverHandler)
+            })
         )
 
         // Listen for document save events, to update the cached items and workspace reference index
