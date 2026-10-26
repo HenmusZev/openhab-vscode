@@ -21,8 +21,6 @@ jest.mock('ascii-table', () => {
             return this.rows.map((r: any[]) => r.join(' ')).join('\n')
         }
     }
-    // __importStar returns a module with __esModule:true as-is (keeps it constructable)
-    Object.defineProperty(MockAsciiTable, '__esModule', { value: true })
     return MockAsciiTable
 })
 

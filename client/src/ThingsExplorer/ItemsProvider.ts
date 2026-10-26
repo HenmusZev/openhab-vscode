@@ -1,7 +1,7 @@
 import { SnippetString, window, workspace } from 'vscode'
 
 import * as _ from 'lodash'
-import * as AsciiTable from 'ascii-table'
+import AsciiTable = require('ascii-table')
 
 import { Thing } from './Thing'
 import { Channel } from './Channel'
